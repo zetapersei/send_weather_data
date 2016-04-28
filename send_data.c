@@ -207,7 +207,7 @@
         result = mysql_store_result(connection);
                 
         while ( ( row = mysql_fetch_row(result)) != NULL ) {
-                strcpy(firstrain, (row[0] ? row[0] : "NULL"));
+                strcpy(lastrain, (row[0] ? row[0] : "NULL"));
         }
 
         mysql_free_result(result);
