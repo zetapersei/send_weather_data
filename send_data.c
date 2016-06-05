@@ -10,35 +10,33 @@
 
         /* Function implementation */
 
-        void wa_send_data ( float CTemp, float humid, float day_amount, float hour_amount, float windspeed, float windg, float winddir) {
+        void wa_send_data ( float CTemp, float humid, float day_amount, float hour_amount, float windspeed, float windg, float winddir,float barohpa) 
+        {
 
                 CURL *curl;
                 CURLcode res;
 
                 float FTemp = CTemp*9/5 + 32;
 
-                /* Dew Point simple formula: proposed in a 2005 article by Mark G. Lawrence in the Bulletin of the American Meteorological Society:
-                        Td = T - ((100 - RH)/5.)
-                        Another formula is:
+                /* Dew Point simple formula: 
                         a = 17.27
                         b = 237.7
                         gamma = (a * t / (b + t)) + ln(rh / 100.0)
                         dew = b * gamma / (a - gamma)*/
-
-                float degree_dewpt = CTemp - ((100 - humid)/5);
-                float dewptf = degree_dewpt*9/5 + 32;
-                /* float inc_amount = (amount - 72.25)/25.445;*/
+		float gamma = logf(humid / 100) + (17.27 * CTemp / (237.7 + CTemp));
+                float dp = 237.7 * gamma / (17.27 - gamma);
+                float dewptf = dp * 9/5 + 32;
                 float incday_amount = day_amount / 25.445;
                 float inchour_amount = hour_amount / 25.445;
                 float windgmph = (windg * 2.236);
 		float windspeedmph = (windspeed * 2.236);
-                 /* float inch_pressure = pressure/33.865;*/
-
+                float barominch = (barohpa + 11) / 33.865;
+                
                 char *postdata;
-                        postdata = malloc(300 * sizeof(char));
+                        postdata = malloc(400 * sizeof(char));
 
-                sprintf(postdata,"ID=%s&PASSWORD=%s&dateutc=now&tempf=%.1f&humidity=%.1f&dewptf=%.1f&dailyrainin=%.3f&rainin=%.3f&windspeedmph=%.2f&windgustmph=%.2f&winddir=%$
-                        ID_DATA, PASSWD_DATA, FTemp, humid, dewptf, incday_amount, inchour_amount, windspeedmph, windgmph, winddir);
+                sprintf(postdata,"ID=%s&PASSWORD=%s&dateutc=now&tempf=%.1f&humidity=%.1f&dewptf=%.1f&dailyrainin=%.3f&rainin=%.3f&windspeedmph=%.2f&windgustmph=%.2f&winddir=%.0f&baromin=%.2f&action=updateraw",
+                        ID_DATA, PASSWD_DATA, FTemp, humid, dewptf, incday_amount, inchour_amount, windspeedmph, windgmph, winddir,barominch);
 
                 curl = curl_easy_init();
 
@@ -81,6 +79,7 @@ res = curl_easy_perform(curl);
         float fwind_dir;
         float diffrain;
         float diffhourrain;
+        float fpressure;
 
         char *datetime;
                 datetime = malloc( 20 * sizeof(char) );
@@ -99,6 +98,9 @@ res = curl_easy_perform(curl);
 
         char *humidity;
                 humidity = malloc( 10 * sizeof(char) );
+                
+        char *pressure;
+                pressure = malloc( 10 * sizeof(char) );
 
         char *wind_speed;
                 wind_speed = malloc( 10 * sizeof(char) );
@@ -169,6 +171,32 @@ res = curl_easy_perform(curl);
 
         mysql_free_result(result);
 
+	/* selection barometric pressure */
+
+        state = mysql_query(connection,
+                "SELECT value FROM wr_barometer order by time desc limit 1");
+
+        if (state != 0) {
+                printf("%s", mysql_error(connection));
+                return 1;
+        }
+
+        /* must call mysql_store_result( ) before you can issue
+                any other query calls */
+
+        result = mysql_store_result(connection);
+                /*printf("Rows: %d\n", mysql_num_rows(result));*/
+                /* process each row in the result set */
+
+        while ( ( row = mysql_fetch_row(result)) != NULL ) {
+                strcpy(pressure, (row[0] ? row[0] : "NULL"));
+
+        }
+
+        /* free the result set */
+
+        mysql_free_result(result);
+        
         /* selection dayly total*/
 	state = mysql_query(connection,
                 "select total from wr_rain where date(time) = date (curdate()) order by time desc limit 1;");
@@ -270,14 +298,16 @@ res = curl_easy_perform(curl);
 	fwind_speed = atof(wind_speed);
         fwind_gust = atof(wind_gust);
         fwind_dir = atof(wind_dir);
+        fpressure = atof(pressure);
 
         diffrain = flastrain - ffirstrain;
         diffhourrain = flastrain - fhourlastrain;
+        
+	printf("\nTEMP:%.1f\nHUMIDITY:%.0f\nRAIN:%.2f\nRAIN HOUR:%.2f\nWind Speed:%.1f\nWind Gust:%.1f\nWind Direction:%.0f\nPressure: %.0f\n",
+                ftemperature, fhumidity, diffrain, diffhourrain, fwind_speed, fwind_gust, fwind_dir, fpressure);
+        
 
-        printf("DATA:%s\nTEMP:%.1f\nHUMIDITY:%.0f\nRAIN:%.2f\nRAIN HOUR:%.2f\nWind Speed:%.1f\nWind Gust:%.1f\nWind Direction:%.0f\n", 
-                datetime, ftemperature, fhumidity, diffrain, diffhourrain, fwind_speed, fwind_gust, fwind_dir);
-
-        wa_send_data(ftemperature, fhumidity, diffrain, diffhourrain, fwind_speed, fwind_gust, fwind_dir);
+        wa_send_data(ftemperature, fhumidity, diffrain, diffhourrain, fwind_speed, fwind_gust, fwind_dir, fpressure);
 
         /* close the connection */
          mysql_close(connection);
