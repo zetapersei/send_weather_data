@@ -111,19 +111,17 @@ res = curl_easy_perform(curl);
         char *wind_dir;
                 wind_dir = malloc( 10 * sizeof(char) );
 
-        /* connect to the MySQL database at localhost */
-
         mysql_init(&mysql);
         connection = mysql_real_connect(&mysql,"localhost", "user", "passwd", 
                                     "database", 0, 0, 0);
 
-        /* check for a connection error */
-
         if (connection == NULL) {
-        /* print the error message */
                 printf("%s", mysql_error(&mysql));
                 return 1;
         }
+        
+        /* Selection temperature */
+        
 	state = mysql_query(connection,
                 "SELECT time, value FROM wr_temperature order by time desc limit 1");
 
@@ -132,21 +130,17 @@ res = curl_easy_perform(curl);
                 return 1;
         }
 
-        /* must call mysql_store_result( ) before you can issue 
-                any other query calls */
-
         result = mysql_store_result(connection);
-            /*printf("Rows: %d\n", mysql_num_rows(result));*/
-            /* process each row in the result set */
-
+           
         while ( ( row = mysql_fetch_row(result)) != NULL ) {
                 strcpy(datetime, (row[0] ? row[0] : "NULL"));
                 strcpy(temperature, (row[1] ? row[1] : "NULL"));
         }
 
-        /* free the result set */
-
          mysql_free_result(result);
+         
+         /* Selection humidity */
+         
 	state = mysql_query(connection,
                 "SELECT value FROM wr_humidity order by time desc limit 1");
 
@@ -154,20 +148,12 @@ res = curl_easy_perform(curl);
                 printf("%s", mysql_error(connection));
                 return 1;
         }
-
-        /* must call mysql_store_result( ) before you can issue 
-                any other query calls */
-
         result = mysql_store_result(connection);
-                /*printf("Rows: %d\n", mysql_num_rows(result));*/
-                /* process each row in the result set */
-
+            
         while ( ( row = mysql_fetch_row(result)) != NULL ) {
                 strcpy(humidity, (row[0] ? row[0] : "NULL"));
 
         }
-
-        /* free the result set */
 
         mysql_free_result(result);
 
@@ -180,24 +166,17 @@ res = curl_easy_perform(curl);
                 printf("%s", mysql_error(connection));
                 return 1;
         }
-
-        /* must call mysql_store_result( ) before you can issue
-                any other query calls */
-
+        
         result = mysql_store_result(connection);
-                /*printf("Rows: %d\n", mysql_num_rows(result));*/
-                /* process each row in the result set */
 
         while ( ( row = mysql_fetch_row(result)) != NULL ) {
                 strcpy(pressure, (row[0] ? row[0] : "NULL"));
-
         }
-
-        /* free the result set */
 
         mysql_free_result(result);
         
-        /* selection dayly total*/
+        /* selection rain dayly total*/
+        
 	state = mysql_query(connection,
                 "select total from wr_rain where date(time) = date (curdate()) order by time desc limit 1;");
 
@@ -206,20 +185,15 @@ res = curl_easy_perform(curl);
                 return 1;
         }
 
-        /* must call mysql_store_result( ) before you can issue
-                any other query calls */
-
         result = mysql_store_result(connection);
-                /*printf("Rows: %d\n", mysql_num_rows(result));*/
-                /* process each row in the result set */
-
+               
         while ( ( row = mysql_fetch_row(result)) != NULL ) {
                 strcpy(lastrain, (row[0] ? row[0] : "NULL"));
         }
 
-        /* free the result set */
-
         mysql_free_result(result);
+	
+	/* Select rain 1 hour */
 
 	state = mysql_query(connection,
               "select total from wr_rain where date(time) = date (curdate()) order by time limit 1;");
@@ -229,18 +203,11 @@ res = curl_easy_perform(curl);
                 return 1;
         }
 
-        /* must call mysql_store_result( ) before you can issue
-                any other query calls */
-
         result = mysql_store_result(connection);
-                /*printf("Rows: %d\n", mysql_num_rows(result));*/
-                /* process each row in the result set */
-
+                
         while ( ( row = mysql_fetch_row(result)) != NULL ) {
                 strcpy(firstrain, (row[0] ? row[0] : "NULL"));
         }
-
-        /* free the result set */
 
         mysql_free_result(result);
 
@@ -251,44 +218,35 @@ res = curl_easy_perform(curl);
                 return 1;
         }
 
-        /* must call mysql_store_result( ) before you can issue
-                any other query calls */
-
         result = mysql_store_result(connection);
-                /*printf("Rows: %d\n", mysql_num_rows(result));*/
-                /* process each row in the result set */
 
         while ( ( row = mysql_fetch_row(result)) != NULL ) {
                 strcpy(hourlastrain, (row[0] ? row[0] : "NULL"));
         }
 
-        /* free the result set */
-
         mysql_free_result(result);
 
+	/* Select wind data */
+	
         state = mysql_query(connection,
                 "SELECT speed, gust, dir FROM wr_wind order by time desc limit 1");
 
         if (state != 0) {
-                printf(mysql_error(connection));              return 1;
+                printf(mysql_error(connection)); 
+                return 1;
         }
 
-        /* must call mysql_store_result( ) before you can issue
-                any other query calls */
-
         result = mysql_store_result(connection);
-                /*printf("Rows: %d\n", mysql_num_rows(result));*/
-                /* process each row in the result set */
-
+               
         while ( ( row = mysql_fetch_row(result)) != NULL ) {
                 strcpy(wind_speed, (row[0] ? row[0] : "NULL"));
                 strcpy(wind_gust,  (row[1] ? row[1] : "NULL"));
                 strcpy(wind_dir,   (row[2] ? row[2] : "NULL"));
         }
 
-        /* free the result set */
-
          mysql_free_result(result);
+
+/* End mysql data retrieved */
 
         ftemperature = atof(temperature);
         fhumidity = atof(humidity);
