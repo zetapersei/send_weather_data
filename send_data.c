@@ -36,11 +36,14 @@
 
                 float FTemp = CTemp*9/5 + 32;
 
-                /* Dew Point simple formula: 
-                        a = 17.27
-                        b = 237.7
-                        gamma = (a * t / (b + t)) + ln(rh / 100.0)
-                        dew = b * gamma / (a - gamma)*/
+                /* Dew Point simple formula: proposed in a 2005 article by Mark G. Lawrence in the Bulletin of the American Meteorological Society:
+                   Td = T - ((100 - RH)/5.)
+                   Another formula is:
+                     a = 17.27
+                     b = 237.7
+                     gamma = (a * t / (b + t)) + ln(rh / 100.0)
+                     dew = b * gamma / (a - gamma)*/
+
 		float gamma = logf(humid / 100) + (17.27 * CTemp / (237.7 + CTemp));
                 float dp = 237.7 * gamma / (17.27 - gamma);
                 float dewptf = dp * 9/5 + 32;
@@ -53,17 +56,17 @@
                 char *postdata;
                         postdata = malloc(400 * sizeof(char));
 
-                sprintf(postdata,"ID=%s&PASSWORD=%s&dateutc=now&tempf=%.1f&humidity=%.1f&dewptf=%.1f&dailyrainin=%.3f&rainin=%.3f&windspeedmph=%.2f&windgustmph=%.2f&winddir=%.0f&baromin=%.2f&action=updateraw",
+                sprintf(postdata,"action=updateraw&ID=%s&PASSWORD=%s&dateutc=now&tempf=%.1f&humidity=%.1f&dewptf=%.1f&dailyrainin=%.3f&rainin=%.3f&windspeedmph=%.2f&windgustmph=%.2f&winddir=%.0f&baromin=%.2f",
                         ID_DATA, PASSWD_DATA, FTemp, humid, dewptf, incday_amount, inchour_amount, windspeedmph, windgmph, winddir,barominch);
 
                 curl = curl_easy_init();
 
                 if(curl) {
                         curl_easy_setopt(curl, CURLOPT_URL, URL_DATA);
-                        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(postdata));
+                        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
                         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postdata);
-
-res = curl_easy_perform(curl);
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(postdata));
+			res = curl_easy_perform(curl);
 
                         if(res != CURLE_OK)
                                 fprintf(stderr, "curl_easy_perform() failed: %s\n",
