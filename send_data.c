@@ -144,7 +144,7 @@
         /* Selection temperature */
         
 	state = mysql_query(connection,
-                "SELECT time, value FROM wr_temperature order by time desc limit 1");
+                "SELECT time, value FROM wr_temperature WHERE sensor_id = 1 order by time desc limit 1");
 
         if (state != 0) {
                 printf("%s", mysql_error(connection));
