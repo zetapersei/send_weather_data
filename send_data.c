@@ -163,7 +163,7 @@
          /* Selection humidity */
          
 	state = mysql_query(connection,
-                "SELECT value FROM wr_humidity order by time desc limit 1");
+                "SELECT value FROM wr_humidity WHERE sensor_id = 1 order by time desc limit 1");
 
         if (state != 0) {
                 printf("%s", mysql_error(connection));
