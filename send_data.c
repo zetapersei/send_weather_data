@@ -1,293 +1,284 @@
-/* 
+/*
 *************************************************************************
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
-   IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
-   TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
-   PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT 
-   HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
-   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
-   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+   IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+   TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+   PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+   HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-   ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
-   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
-   OF OR INABILITY TO USE THIS SOFTWARE, EVEN IF THE COPYRIGHT HOLDERS OR 
+   ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+   OF OR INABILITY TO USE THIS SOFTWARE, EVEN IF THE COPYRIGHT HOLDERS OR
    CONTRIBUTORS ARE AWARE OF THE POSSIBILITY OF SUCH DAMAGE.
 ************************************************************************
 */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <curl/curl.h>
 #include <mysql.h>
 
-        static const char URL_DATA[] = "http://weatherstation.wunderground.com/weatherstation/updateweatherstation.php";
-        static const char ID_DATA[] = "station_id";
-        static const char PASSWD_DATA[] = "user_pwd";
+static const char URL_DATA[] = "http://weatherstation.wunderground.com/weatherstation/updateweatherstation.php";
+static const char ID_DATA[] = "station_id";
+static const char PASSWD_DATA[] = "user_pwd";
 
-        /* Function implementation */
+static int fetch_single_value(MYSQL *connection, const char *query,
+                              char *buffer, size_t buffer_size)
+{
+    MYSQL_RES *result = NULL;
+    MYSQL_ROW row;
+    int status;
 
-        void wa_send_data ( float CTemp, float humid, float day_amount, float hour_amount, float windspeed, float windg, float winddir,float barohpa) 
-        {
+    status = mysql_query(connection, query);
+    if (status != 0) {
+        fprintf(stderr, "%s\n", mysql_error(connection));
+        return status;
+    }
 
-                CURL *curl;
-                CURLcode res;
+    result = mysql_store_result(connection);
+    if (result == NULL) {
+        fprintf(stderr, "%s\n", mysql_error(connection));
+        return 1;
+    }
 
-                float FTemp = CTemp*9/5 + 32;
-
-                /* Dew Point simple formula: proposed in a 2005 article by Mark G. Lawrence in the Bulletin of the American Meteorological Society:
-                   Td = T - ((100 - RH)/5.)
-                   Another formula is:
-                     a = 17.27
-                     b = 237.7
-                     gamma = (a * t / (b + t)) + ln(rh / 100.0)
-                     dew = b * gamma / (a - gamma)*/
-
-		float gamma = logf(humid / 100) + (17.27 * CTemp / (237.7 + CTemp));
-                float dp = 237.7 * gamma / (17.27 - gamma);
-                float dewptf = dp * 9/5 + 32;
-                float incday_amount = day_amount / 25.445;
-                float inchour_amount = hour_amount / 25.445;
-                float windgmph = (windg * 2.236);
-		float windspeedmph = (windspeed * 2.236);
-                float barominch = (barohpa + 11) / 33.865;
-                
-                char *postdata;
-                        postdata = malloc(400 * sizeof(char));
-
-                sprintf(postdata,"action=updateraw&ID=%s&PASSWORD=%s&dateutc=now&tempf=%.1f&humidity=%.1f&dewptf=%.1f&dailyrainin=%.3f&rainin=%.3f&windspeedmph=%.2f&windgustmph=%.2f&winddir=%.0f&baromin=%.2f",
-                        ID_DATA, PASSWD_DATA, FTemp, humid, dewptf, incday_amount, inchour_amount, windspeedmph, windgmph, winddir,barominch);
-
-                curl = curl_easy_init();
-
-                if(curl) {
-                        curl_easy_setopt(curl, CURLOPT_URL, URL_DATA);
-                        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-                        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postdata);
-			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(postdata));
-			res = curl_easy_perform(curl);
-
-                        if(res != CURLE_OK)
-                                fprintf(stderr, "curl_easy_perform() failed: %s\n",
-                                curl_easy_strerror(res));
-
-                        curl_easy_cleanup(curl);
-                }
-
+    row = mysql_fetch_row(result);
+    if (row == NULL || row[0] == NULL) {
+        if (buffer != NULL && buffer_size > 0) {
+            buffer[0] = '\0';
         }
-
-
-/* Retrieve data from Mysql database and send data  with http post
-   This application use data stored by https://github.com/hassebjork/WeatherReader.git 
-   and send sensors value at Weather Underground site  */
-
-        int main(char **args) {
-
-
-        MYSQL_RES *result;
-        MYSQL_ROW row;
-        MYSQL *connection, mysql;
-
-        int state;
-        float ftemperature;
-        float fhumidity;
-        float ffirstrain;
-        float flastrain;
-        float fhourlastrain;
-        float fwind_speed;
-        float fwind_gust;
-        float fwind_dir;
-        float diffrain;
-        float diffhourrain;
-        float fpressure;
-
-        char *datetime;
-                datetime = malloc( 20 * sizeof(char) );
-
-        char *temperature;
-                temperature = malloc( 10 * sizeof(char) );
-
-        char *firstrain;
-                firstrain = malloc( 10 * sizeof(char) );
-
-        char *lastrain;
-                lastrain = malloc( 10 * sizeof(char) );
-
-        char *hourlastrain;
-                hourlastrain = malloc( 10 * sizeof(char) );
-
-        char *humidity;
-                humidity = malloc( 10 * sizeof(char) );
-                
-        char *pressure;
-                pressure = malloc( 10 * sizeof(char) );
-
-        char *wind_speed;
-                wind_speed = malloc( 10 * sizeof(char) );
-
-        char *wind_gust;
-                wind_gust = malloc( 10 * sizeof(char) );
-
-        char *wind_dir;
-                wind_dir = malloc( 10 * sizeof(char) );
-
-        mysql_init(&mysql);
-        connection = mysql_real_connect(&mysql,"localhost", "user", "passwd", 
-                                    "database", 0, 0, 0);
-
-        if (connection == NULL) {
-                printf("%s", mysql_error(&mysql));
-                return 1;
-        }
-        
-        /* Selection temperature */
-        
-	state = mysql_query(connection,
-                "SELECT time, value FROM wr_temperature WHERE sensor_id = 1 order by time desc limit 1");
-
-        if (state != 0) {
-                printf("%s", mysql_error(connection));
-                return 1;
-        }
-
-        result = mysql_store_result(connection);
-           
-        while ( ( row = mysql_fetch_row(result)) != NULL ) {
-                strcpy(datetime, (row[0] ? row[0] : "NULL"));
-                strcpy(temperature, (row[1] ? row[1] : "NULL"));
-        }
-
-         mysql_free_result(result);
-         
-         /* Selection humidity */
-         
-	state = mysql_query(connection,
-                "SELECT value FROM wr_humidity WHERE sensor_id = 1 order by time desc limit 1");
-
-        if (state != 0) {
-                printf("%s", mysql_error(connection));
-                return 1;
-        }
-        result = mysql_store_result(connection);
-            
-        while ( ( row = mysql_fetch_row(result)) != NULL ) {
-                strcpy(humidity, (row[0] ? row[0] : "NULL"));
-
-        }
-
         mysql_free_result(result);
+        return 0;
+    }
 
-	/* selection barometric pressure */
+    snprintf(buffer, buffer_size, "%s", row[0]);
+    mysql_free_result(result);
+    return 0;
+}
 
-        state = mysql_query(connection,
-                "SELECT value FROM wr_barometer order by time desc limit 1");
+static int fetch_wind_values(MYSQL *connection,
+                             char *wind_speed, size_t wind_speed_size,
+                             char *wind_gust, size_t wind_gust_size,
+                             char *wind_dir, size_t wind_dir_size)
+{
+    MYSQL_RES *result = NULL;
+    MYSQL_ROW row;
+    int status;
 
-        if (state != 0) {
-                printf("%s", mysql_error(connection));
-                return 1;
-        }
-        
-        result = mysql_store_result(connection);
+    status = mysql_query(connection,
+                         "SELECT speed, gust, dir FROM wr_wind ORDER BY time DESC LIMIT 1");
+    if (status != 0) {
+        fprintf(stderr, "%s\n", mysql_error(connection));
+        return status;
+    }
 
-        while ( ( row = mysql_fetch_row(result)) != NULL ) {
-                strcpy(pressure, (row[0] ? row[0] : "NULL"));
-        }
+    result = mysql_store_result(connection);
+    if (result == NULL) {
+        fprintf(stderr, "%s\n", mysql_error(connection));
+        return 1;
+    }
 
-        mysql_free_result(result);
-        
-        /* selection rain dayly total*/
-        
-	state = mysql_query(connection,
-                "select total from wr_rain where date(time) = date (curdate()) order by time desc limit 1;");
+    row = mysql_fetch_row(result);
+    if (row != NULL) {
+        snprintf(wind_speed, wind_speed_size, "%s", row[0] != NULL ? row[0] : "0");
+        snprintf(wind_gust, wind_gust_size, "%s", row[1] != NULL ? row[1] : "0");
+        snprintf(wind_dir, wind_dir_size, "%s", row[2] != NULL ? row[2] : "0");
+    }
 
-        if (state != 0) {
-                printf("%s", mysql_error(connection));
-                return 1;
-        }
+    mysql_free_result(result);
+    return 0;
+}
 
-        result = mysql_store_result(connection);
-               
-        while ( ( row = mysql_fetch_row(result)) != NULL ) {
-                strcpy(lastrain, (row[0] ? row[0] : "NULL"));
-        }
+void wa_send_data(float ctemp, float humid, float day_amount, float hour_amount,
+                  float windspeed, float windg, float winddir, float barohpa)
+{
+    CURL *curl;
+    CURLcode res;
+    char postdata[512];
+    const float gamma = logf(humid / 100.0f) + (17.27f * ctemp / (237.7f + ctemp));
+    const float dp = 237.7f * gamma / (17.27f - gamma);
+    const float ftemp = (ctemp * 9.0f / 5.0f) + 32.0f;
+    const float dewptf = (dp * 9.0f / 5.0f) + 32.0f;
+    const float incday_amount = day_amount / 25.445f;
+    const float inchour_amount = hour_amount / 25.445f;
+    const float windgmph = windg * 2.236f;
+    const float windspeedmph = windspeed * 2.236f;
+    const float barominch = (barohpa + 11.0f) / 33.865f;
+    const int written = snprintf(postdata, sizeof(postdata),
+           "action=updateraw&ID=%s&PASSWORD=%s&dateutc=now&tempf=%.1f&humidity=%.0f&dewptf=%.1f&rainin=%.2f&hourlyrainin=%.2f&windspeedmph=%.1f&windgustmph=%.1f&winddir=%.0f&baromin=%.3f",
+           ID_DATA,
+           PASSWD_DATA,
+           ftemp,
+           humid,
+           dewptf,
+           incday_amount,
+           inchour_amount,
+           windspeedmph,
+           windgmph,
+           winddir,
+           barominch);
 
-        mysql_free_result(result);
-	
-	/* Select rain 1 hour */
+    if (written < 0 || (size_t)written >= sizeof(postdata)) {
+        fprintf(stderr, "Post payload too large for buffer.\n");
+        return;
+    }
 
-	state = mysql_query(connection,
-              "select total from wr_rain where date(time) = date (curdate()) order by time limit 1;");
+    curl = curl_easy_init();
+    if (!curl) {
+        return;
+    }
 
-        if (state != 0) {
-                printf("%s", mysql_error(connection));
-                return 1;
-        }
+    curl_easy_setopt(curl, CURLOPT_URL, URL_DATA);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postdata);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)written);
 
-        result = mysql_store_result(connection);
-                
-        while ( ( row = mysql_fetch_row(result)) != NULL ) {
-                strcpy(firstrain, (row[0] ? row[0] : "NULL"));
-        }
+    res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    }
 
-        mysql_free_result(result);
+    curl_easy_cleanup(curl);
+}
 
-        state = mysql_query(connection,
-                "select total, time from wr_rain where timestamp(time) >= date_sub(now(), interval 60 minute)  limit 1");
-	if (state != 0) {
-                printf("%s", mysql_error(connection));
-                return 1;
-        }
+/*
+   Retrieve data from Mysql database and send data with http post.
+   This application uses data stored by https://github.com/hassebjork/WeatherReader.git
+   and sends sensor values to the Weather Underground site.
+*/
+int main(void)
+{
+    MYSQL mysql = {0};
+    MYSQL *connection;
+    char temperature[32] = "0";
+    char humidity[32] = "0";
+    char firstrain[32] = "0";
+    char lastrain[32] = "0";
+    char hourlastrain[32] = "0";
+    char pressure[32] = "0";
+    char wind_speed[32] = "0";
+    char wind_gust[32] = "0";
+    char wind_dir[32] = "0";
+    float ftemperature;
+    float fhumidity;
+    float ffirstrain;
+    float flastrain;
+    float fhourlastrain;
+    float fwind_speed;
+    float fwind_gust;
+    float fwind_dir;
+    float diffrain;
+    float diffhourrain;
+    float fpressure;
+    int status;
 
-        result = mysql_store_result(connection);
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+        fprintf(stderr, "curl_global_init() failed\n");
+        return 1;
+    }
 
-        while ( ( row = mysql_fetch_row(result)) != NULL ) {
-                strcpy(hourlastrain, (row[0] ? row[0] : "NULL"));
-        }
+    connection = mysql_init(&mysql);
+    if (connection == NULL) {
+        fprintf(stderr, "mysql_init() failed\n");
+        curl_global_cleanup();
+        return 1;
+    }
 
-        mysql_free_result(result);
+    if (mysql_real_connect(connection, "localhost", "user", "passwd", "database",
+                           0, NULL, 0) == NULL) {
+        fprintf(stderr, "%s\n", mysql_error(connection));
+        mysql_close(connection);
+        curl_global_cleanup();
+        return 1;
+    }
 
-	/* Select wind data */
-	
-        state = mysql_query(connection,
-                "SELECT speed, gust, dir FROM wr_wind order by time desc limit 1");
+    status = fetch_single_value(connection,
+                                "SELECT value FROM wr_temperature WHERE sensor_id = 1 ORDER BY time DESC LIMIT 1",
+                                temperature, sizeof(temperature));
+    if (status != 0) {
+        mysql_close(connection);
+        curl_global_cleanup();
+        return 1;
+    }
 
-        if (state != 0) {
-                printf(mysql_error(connection)); 
-                return 1;
-        }
+    status = fetch_single_value(connection,
+                                "SELECT value FROM wr_humidity WHERE sensor_id = 1 ORDER BY time DESC LIMIT 1",
+                                humidity, sizeof(humidity));
+    if (status != 0) {
+        mysql_close(connection);
+        curl_global_cleanup();
+        return 1;
+    }
 
-        result = mysql_store_result(connection);
-               
-        while ( ( row = mysql_fetch_row(result)) != NULL ) {
-                strcpy(wind_speed, (row[0] ? row[0] : "NULL"));
-                strcpy(wind_gust,  (row[1] ? row[1] : "NULL"));
-                strcpy(wind_dir,   (row[2] ? row[2] : "NULL"));
-        }
+    status = fetch_single_value(connection,
+                                "SELECT value FROM wr_barometer ORDER BY time DESC LIMIT 1",
+                                pressure, sizeof(pressure));
+    if (status != 0) {
+        mysql_close(connection);
+        curl_global_cleanup();
+        return 1;
+    }
 
-         mysql_free_result(result);
+    status = fetch_single_value(connection,
+                                "SELECT total FROM wr_rain WHERE DATE(time) = DATE(CURDATE()) ORDER BY time DESC LIMIT 1",
+                                lastrain, sizeof(lastrain));
+    if (status != 0) {
+        mysql_close(connection);
+        curl_global_cleanup();
+        return 1;
+    }
 
-/* End mysql data retrieved */
+    status = fetch_single_value(connection,
+                                "SELECT total FROM wr_rain WHERE DATE(time) = DATE(CURDATE()) ORDER BY time LIMIT 1",
+                                firstrain, sizeof(firstrain));
+    if (status != 0) {
+        mysql_close(connection);
+        curl_global_cleanup();
+        return 1;
+    }
 
-        ftemperature = atof(temperature);
-        fhumidity = atof(humidity);
-        ffirstrain = atof(firstrain);
-        flastrain = atof(lastrain);
-        fhourlastrain = atof(hourlastrain);
-	fwind_speed = atof(wind_speed);
-        fwind_gust = atof(wind_gust);
-        fwind_dir = atof(wind_dir);
-        fpressure = atof(pressure);
+    status = fetch_single_value(connection,
+                                "SELECT total FROM wr_rain WHERE TIMESTAMP(time) >= DATE_SUB(NOW(), INTERVAL 60 MINUTE) LIMIT 1",
+                                hourlastrain, sizeof(hourlastrain));
+    if (status != 0) {
+        mysql_close(connection);
+        curl_global_cleanup();
+        return 1;
+    }
 
-        diffrain = flastrain - ffirstrain;
-        diffhourrain = flastrain - fhourlastrain;
-        
-	printf("\nTEMP:%.1f\nHUMIDITY:%.0f\nRAIN:%.2f\nRAIN HOUR:%.2f\nWind Speed:%.1f\nWind Gust:%.1f\nWind Direction:%.0f\nPressure: %.0f\n",
-                ftemperature, fhumidity, diffrain, diffhourrain, fwind_speed, fwind_gust, fwind_dir, fpressure);
-        
+    status = fetch_wind_values(connection, wind_speed, sizeof(wind_speed),
+                              wind_gust, sizeof(wind_gust),
+                              wind_dir, sizeof(wind_dir));
+    if (status != 0) {
+        mysql_close(connection);
+        curl_global_cleanup();
+        return 1;
+    }
 
-        wa_send_data(ftemperature, fhumidity, diffrain, diffhourrain, fwind_speed, fwind_gust, fwind_dir, fpressure);
+    ftemperature = strtof(temperature, NULL);
+    fhumidity = strtof(humidity, NULL);
+    ffirstrain = strtof(firstrain, NULL);
+    flastrain = strtof(lastrain, NULL);
+    fhourlastrain = strtof(hourlastrain, NULL);
+    fwind_speed = strtof(wind_speed, NULL);
+    fwind_gust = strtof(wind_gust, NULL);
+    fwind_dir = strtof(wind_dir, NULL);
+    fpressure = strtof(pressure, NULL);
 
-        /* close the connection */
-         mysql_close(connection);
+    diffrain = flastrain - ffirstrain;
+    diffhourrain = flastrain - fhourlastrain;
+
+    printf("\nTEMP:%.1f\nHUMIDITY:%.0f\nRAIN:%.2f\nRAIN HOUR:%.2f\nWind Speed:%.1f\nWind Gust:%.1f\nWind Direction:%.0f\nPressure: %.0f\n",
+           ftemperature, fhumidity, diffrain, diffhourrain,
+           fwind_speed, fwind_gust, fwind_dir, fpressure);
+
+    wa_send_data(ftemperature, fhumidity, diffrain, diffhourrain,
+                 fwind_speed, fwind_gust, fwind_dir, fpressure);
+
+    mysql_close(connection);
+    curl_global_cleanup();
+    return 0;
 }
