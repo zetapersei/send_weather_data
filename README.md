@@ -1,4 +1,4 @@
-# send_weather_data
+# Send Weather Data
 
 `send_weather_data` is a small C program that reads the latest weather-station
 measurements from a MySQL database and prepares them for submission to the
